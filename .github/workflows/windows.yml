@@ -1,0 +1,76 @@
+# Builds the Windows version of Ding on a real Windows machine:
+# compiles it, launches it once to check every window opens, then packs the installer.
+# The installer appears under "Artifacts" on the run's page; for a version tag (v1.2.3)
+# it is also attached to that GitHub Release.
+name: Windows build
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "windows/**"
+      - "Characters/**"
+      - ".github/workflows/windows.yml"
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write   # to attach the installer to a release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content windows/Ding.csproj
+          $version = @($project.Project.PropertyGroup.Version | Where-Object { $_ })[0]
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Publish (self-contained, no .NET install needed by users)
+        run: dotnet publish windows/Ding.csproj -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true -o windows/publish
+
+      - name: Launch check (opens the panel, Hide Everything and a reminder, then exits)
+        shell: pwsh
+        run: |
+          $env:DING_SMOKE = "1"
+          $process = Start-Process windows/publish/Ding.exe -PassThru
+          $null = $process.Handle   # keeps the handle so the exit code can be read
+          $finished = $process.WaitForExit(90000)
+          Get-Content "$env:TEMP\ding.log" -ErrorAction SilentlyContinue
+          if (-not $finished) { Stop-Process $process -Force; throw "Ding did not finish the launch check in time" }
+          if ($process.ExitCode -ne 0) { throw "Ding exited with code $($process.ExitCode)" }
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" windows/installer/Ding.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+          $installer = "windows/installer/Output/Ding-Setup-$version.exe"
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          "$hash  Ding-Setup-$version.exe" | Out-File "$installer.sha256" -Encoding ascii -NoNewline
+          Get-Item windows/installer/Output/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ding-Setup-${{ steps.version.outputs.version }}
+          path: windows/installer/Output/*
+
+      - name: Attach to the GitHub Release (version tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            windows/installer/Output/Ding-Setup-${{ steps.version.outputs.version }}.exe
+            windows/installer/Output/Ding-Setup-${{ steps.version.outputs.version }}.exe.sha256

@@ -1,5 +1,4 @@
 import AppKit
-import Lottie
 
 /// Plays a reminder on the screen under the mouse: the chosen character runs in and
 /// delivers it (see `CharacterRunner`). The panel is click-through except over the
@@ -30,8 +29,7 @@ final class ReminderShowController {
         panel.isReleasedWhenClosed = false
         panel.animationBehavior = .none
 
-        let animation = character.flatMap { LottieAnimation.filepath($0.url.path) }
-        let runner = CharacterRunner(animation: animation, reminder: reminder, screen: screen)
+        let runner = CharacterRunner(character: character, reminder: reminder, screen: screen)
         runner.setInteractive = { [weak panel] on in
             panel?.ignoresMouseEvents = !on
             // Key (without activating Ding) so the card's buttons respond to the first click.

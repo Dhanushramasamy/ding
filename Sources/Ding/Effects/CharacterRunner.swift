@@ -2,25 +2,6 @@ import AppKit
 import Lottie
 import SwiftUI
 
-/// A Lottie animation in Characters/ that is one of the menu's choices.
-struct Character: Identifiable, Hashable {
-    let name: String
-    let url: URL
-    var id: String { name }
-
-    /// Every JSON bundled in Contents/Resources/Characters, alphabetically.
-    static var all: [Character] {
-        guard let folder = Bundle.main.resourceURL?.appendingPathComponent("Characters"),
-              let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else {
-            return []
-        }
-        return files
-            .filter { $0.pathExtension.lowercased() == "json" }
-            .map { Character(name: $0.deletingPathExtension().lastPathComponent, url: $0) }
-            .sorted { $0.name < $1.name }
-    }
-}
-
 // MARK: - Measuring the artwork
 
 /// Where the drawing actually sits inside a Lottie canvas, as fractions (y downward),
@@ -122,10 +103,11 @@ struct ReminderBubble: View {
         )
         .shadow(color: .black.opacity(0.22), radius: 28, y: 14)
         .shadow(color: .black.opacity(0.10), radius: 3, y: 1)
-        // Fade in where it stands; slide up and away when dismissed.
+        // Grows up out of the character; slides up and away when dismissed.
+        .scaleEffect(model.visible && !model.leaving ? 1 : (model.leaving ? 0.97 : 0.4), anchor: .bottom)
         .opacity(model.visible && !model.leaving ? 1 : 0)
-        .offset(y: model.leaving ? -50 : (model.visible ? 0 : 8))
-        .animation(.easeOut(duration: 0.3), value: model.visible)
+        .offset(y: model.leaving ? -50 : (model.visible ? 0 : 20))
+        .animation(.easeOut(duration: 0.35), value: model.visible)
         .animation(.easeIn(duration: 0.3), value: model.leaving)
     }
 }
@@ -156,13 +138,23 @@ final class FlippedView: NSView {
 
 // MARK: - Runner
 
-/// Delivers a reminder: the character runs in from the left and brakes to a stop in
-/// the middle of the screen, timed so its legs land on the standing pose just as it
-/// arrives. The card then fades in above it. Done or Snooze slides the card away and
-/// the character runs on and off the right edge.
+/// Delivers a reminder with the chosen character:
+/// - a Lottie character runs in from a random point on any edge and brakes to a stop in
+///   the middle of the screen, timed so its legs land on the standing pose as it arrives;
+/// - your own image hop-runs in the same way (a still picture has no legs to animate);
+/// The card then grows out of the character. Done or Snooze slides it away and everyone
+/// leaves toward another edge.
 @MainActor
 final class CharacterRunner: NSObject {
     private enum Phase { case runIn, present, runOut, done }
+
+    private enum Actor {
+        case lottie(LottieAnimationView, LottieAnimation)
+        case image(FlippedView, CALayer, CGSize)
+        case none
+    }
+
+    private enum Edge: CaseIterable { case left, right, top, bottom }
 
     let view: NSView
     /// Called with true while the cursor is over the card, so the panel takes clicks there.
@@ -173,16 +165,21 @@ final class CharacterRunner: NSObject {
     private let screenFrame: CGRect
     private let size: CGSize
     private let stage: FlippedView
-    private let character: LottieAnimationView?
-    private let animation: LottieAnimation?
-    private let art: ArtBounds
+    private let actor: Actor
+    private var art = ArtBounds()
     private let bubble = BubbleModel()
     private let drawnTarget: CGFloat
 
     private var phase = Phase.done
     private var lastTimestamp: CFTimeInterval = 0
-    private var x: CGFloat = 0
+    /// The character's feet, in screen coordinates (top-left origin).
+    private var position = CGPoint.zero
+    private var direction = CGVector(dx: 1, dy: 0)
+    private var facing: CGFloat = 1
+    private var entryEdge = Edge.left
+    private var exitPoint = CGPoint.zero
     private var velocity: CGFloat = 0
+    private var hopPhase: Double = 0
     private var interactive = false
     private var finished = false
     private var displayLink: CADisplayLink?
@@ -191,30 +188,62 @@ final class CharacterRunner: NSObject {
     private static let braking: CGFloat = 700        // points/s², a gentle, even slow-down
     private static let acceleration: CGFloat = 1200
 
-    init(animation: LottieAnimation?, reminder: Reminder, screen: NSScreen, drawnHeight: CGFloat = 190) {
+    init(character: Character?, reminder: Reminder, screen: NSScreen, drawnHeight: CGFloat = 190) {
         screenFrame = screen.frame
         size = screen.frame.size
         drawnTarget = drawnHeight
-        self.animation = animation
         view = NSView(frame: CGRect(origin: .zero, size: size))
         stage = FlippedView(frame: view.bounds)
         stage.wantsLayer = true
 
-        if let animation {
-            art = ArtBounds.measure(animation)
-            let lottie = LottieAnimationView(animation: animation)
-            lottie.contentMode = .scaleAspectFit
-            lottie.loopMode = .loop
-            lottie.backgroundBehavior = .continuePlaying
-            character = lottie
-        } else {
-            art = ArtBounds()
-            character = nil
+        switch character?.kind {
+        case .lottie?:
+            if let url = character?.url, let animation = LottieAnimation.filepath(url.path) {
+                art = ArtBounds.measure(animation)
+                let lottie = LottieAnimationView(animation: animation)
+                lottie.contentMode = .scaleAspectFit
+                lottie.loopMode = .loop
+                lottie.backgroundBehavior = .continuePlaying
+                actor = .lottie(lottie, animation)
+            } else {
+                actor = .none
+            }
+        case .image?:
+            if let url = character?.url,
+               let image = NSImage(contentsOf: url)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                // Fit the picture to the character height, capping very wide images.
+                let aspect = CGFloat(image.width) / CGFloat(max(image.height, 1))
+                var drawn = CGSize(width: drawnHeight * aspect, height: drawnHeight)
+                if drawn.width > 300 { drawn = CGSize(width: 300, height: 300 / aspect) }
+                let container = FlippedView(frame: CGRect(origin: .zero, size: drawn))
+                container.wantsLayer = true
+                let layer = CALayer()
+                layer.contents = image
+                layer.contentsGravity = .resizeAspect
+                layer.contentsScale = screen.backingScaleFactor
+                // Pivot at the feet, so tilting and squashing keep it on the ground.
+                layer.anchorPoint = CGPoint(x: 0.5, y: 1)
+                layer.bounds = CGRect(origin: .zero, size: drawn)
+                layer.position = CGPoint(x: drawn.width / 2, y: drawn.height)
+                container.layer?.addSublayer(layer)
+                actor = .image(container, layer, drawn)
+            } else {
+                actor = .none
+            }
+        case nil:
+            actor = .none
         }
         super.init()
 
         view.addSubview(stage)
-        if let character { stage.addSubview(character) }
+        switch actor {
+        case .lottie(let lottie, _):
+            stage.addSubview(lottie)
+        case .image(let container, _, _):
+            stage.addSubview(container)
+        case .none:
+            break
+        }
         let bubbleView = FirstClickHostingView(rootView: BubbleOverlay(model: bubble))
         bubbleView.frame = view.bounds
         view.addSubview(bubbleView)
@@ -224,22 +253,43 @@ final class CharacterRunner: NSObject {
         bubble.onSnooze = { [weak self] in self?.dismiss(snooze: true) }
     }
 
-    private var groundY: CGFloat { size.height * 0.68 }
-    /// Side of the square the animation is fitted into, so the drawing itself (not the
-    /// empty canvas around it) is `drawnTarget` tall.
+    /// Where the character stops: its feet a little below the middle of the screen.
+    private var stopPoint: CGPoint { CGPoint(x: size.width / 2, y: size.height * 0.62) }
+    /// Side of the square a Lottie animation is fitted into, so the drawing itself (not
+    /// the empty canvas around it) is `drawnTarget` tall.
     private var boxSide: CGFloat { drawnTarget / max(art.bottom - art.top, 0.2) }
-    private var drawnHeight: CGFloat { character == nil ? 0 : (art.bottom - art.top) * boxSide }
+
+    /// Height of the character on screen; zero when there isn't one standing there.
+    private var actorHeight: CGFloat {
+        switch actor {
+        case .lottie: return (art.bottom - art.top) * boxSide
+        case .image(_, _, let drawn): return drawn.height
+        case .none: return 0
+        }
+    }
+
+    private var actorWidth: CGFloat {
+        switch actor {
+        case .lottie: return boxSide
+        case .image(_, _, let drawn): return drawn.width
+        case .none: return 0
+        }
+    }
 
     func play() {
-        x = character == nil ? size.width / 2 : -boxSide
         velocity = Self.runSpeed
-        place()
-        if let character {
-            character.play()
+        switch actor {
+        case .lottie, .image:
+            entryEdge = Edge.allCases.randomElement()!
+            position = point(on: entryEdge)
+            aim(at: stopPoint)
+            if case .lottie(let lottie, _) = actor { lottie.play() }
             phase = .runIn
-        } else {
+        case .none:
+            position = stopPoint
             showCard()
         }
+        place()
         let link = view.displayLink(target: self, selector: #selector(tick(_:)))
         // As smooth as the display allows (120 Hz on ProMotion screens).
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
@@ -247,10 +297,36 @@ final class CharacterRunner: NSObject {
         displayLink = link
     }
 
+    /// A random spot just beyond an edge, far enough out that the character starts unseen.
+    private func point(on edge: Edge) -> CGPoint {
+        let margin = actorWidth / 2 + 20
+        switch edge {
+        case .left: return CGPoint(x: -margin, y: .random(in: size.height * 0.3...size.height * 0.85))
+        case .right: return CGPoint(x: size.width + margin, y: .random(in: size.height * 0.3...size.height * 0.85))
+        case .top: return CGPoint(x: .random(in: size.width * 0.15...size.width * 0.85), y: -20)
+        case .bottom: return CGPoint(x: .random(in: size.width * 0.15...size.width * 0.85), y: size.height + actorHeight + 20)
+        }
+    }
+
+    private func aim(at target: CGPoint) {
+        let dx = target.x - position.x, dy = target.y - position.y
+        let length = max(hypot(dx, dy), 0.001)
+        direction = CGVector(dx: dx / length, dy: dy / length)
+        // Face the way it's going; straight up or down keeps the current facing.
+        if direction.dx < -0.2 { facing = -1 } else if direction.dx > 0.2 { facing = 1 }
+    }
+
     private func showCard() {
         phase = .present
-        bubble.tip = CGPoint(x: x, y: groundY - drawnHeight - 18)
-        bubble.visible = true
+        switch actor {
+        case .lottie, .image:
+            bubble.tip = CGPoint(x: position.x, y: position.y - actorHeight - 18)
+        case .none:
+            bubble.tip = CGPoint(x: size.width / 2, y: size.height * 0.58)
+        }
+        // Place it first, then reveal it, so it grows from the character rather than
+        // sliding in from wherever it was before.
+        DispatchQueue.main.async { self.bubble.visible = true }
     }
 
     private func dismiss(snooze: Bool) {
@@ -263,8 +339,22 @@ final class CharacterRunner: NSObject {
             NSCursor.pop()
         }
         velocity = 0
-        character?.play()
+        switch actor {
+        case .lottie(let lottie, _):
+            lottie.play()
+            leaveTowardAnotherEdge()
+        case .image:
+            leaveTowardAnotherEdge()
+        case .none:
+            break
+        }
         phase = .runOut
+    }
+
+    private func leaveTowardAnotherEdge() {
+        let exitEdge = Edge.allCases.filter { $0 != entryEdge }.randomElement()!
+        exitPoint = point(on: exitEdge)
+        aim(at: exitPoint)
     }
 
     private func finish() {
@@ -272,7 +362,7 @@ final class CharacterRunner: NSObject {
         finished = true
         displayLink?.invalidate()
         displayLink = nil
-        character?.stop()
+        if case .lottie(let lottie, _) = actor { lottie.stop() }
         DispatchQueue.main.async { self.onFinished() }
     }
 
@@ -282,63 +372,108 @@ final class CharacterRunner: NSObject {
 
         switch phase {
         case .runIn:
-            runIn(dt)
+            switch actor {
+            case .lottie(let lottie, let animation): runIn(dt, lottie: lottie, animation: animation)
+            case .image: runInImage(dt)
+            case .none: break
+            }
         case .present:
             updateHover()
         case .runOut:
-            velocity = min(Self.runSpeed, velocity + Self.acceleration * CGFloat(dt))
-            x += velocity * CGFloat(dt)
-            character?.animationSpeed = max(0.4, velocity / Self.runSpeed)
-            if x > size.width + boxSide || character == nil {
-                phase = .done
-                // Let the card finish sliding away before the panel closes.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.finish() }
+            switch actor {
+            case .none:
+                complete()
+            case .lottie(let lottie, _):
+                runOut(dt)
+                lottie.animationSpeed = max(0.4, velocity / Self.runSpeed)
+            case .image:
+                runOut(dt)
             }
         case .done:
             break
         }
+
         place()
+    }
+
+    private func runOut(_ dt: Double) {
+        velocity = min(Self.runSpeed, velocity + Self.acceleration * CGFloat(dt))
+        move(dt)
+        let margin = actorWidth + actorHeight
+        if !CGRect(origin: .zero, size: size).insetBy(dx: -margin, dy: -margin).contains(position) { complete() }
+    }
+
+    private func move(_ dt: Double) {
+        let step = velocity * CGFloat(dt)
+        position.x += direction.dx * step
+        position.y += direction.dy * step
+        hopPhase += Double(step) / 110 * .pi
+    }
+
+    private func complete() {
+        guard phase != .done else { return }
+        phase = .done
+        // Let the card finish sliding away before the panel closes.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.finish() }
+    }
+
+    /// How far is left to the stop point, and the speed to have there given even braking.
+    private func brake() -> CGFloat {
+        let remaining = hypot(stopPoint.x - position.x, stopPoint.y - position.y)
+        let brakeFrom = sqrt(2 * Self.braking * remaining)
+        velocity = brakeFrom < velocity ? max(0, brakeFrom) : Self.runSpeed
+        return remaining
     }
 
     /// Full speed, then an even brake that ends exactly at the centre. While braking,
     /// the leg cycle is paced so the standing pose comes up at the moment it stops.
-    private func runIn(_ dt: Double) {
-        guard let character, let animation else { return }
-        let center = size.width / 2
-        let remaining = max(0, center - x)
-        let brakeFrom = sqrt(2 * Self.braking * remaining)
-
-        if brakeFrom < velocity {
-            velocity = max(0, brakeFrom)
+    private func runIn(_ dt: Double, lottie: LottieAnimationView, animation: LottieAnimation) {
+        let wasRunning = velocity >= Self.runSpeed
+        let remaining = brake()
+        if velocity < Self.runSpeed || !wasRunning {
             let timeLeft = Double(velocity / Self.braking)
             let cycle = animation.endFrame - animation.startFrame
-            var framesLeft = (art.standFrame - character.realtimeAnimationFrame).truncatingRemainder(dividingBy: cycle)
+            var framesLeft = (art.standFrame - lottie.realtimeAnimationFrame).truncatingRemainder(dividingBy: cycle)
             if framesLeft < 0 { framesLeft += cycle }
             if timeLeft > 0.05 {
                 let natural = Double(velocity / Self.runSpeed)
                 let needed = Double(framesLeft) / (animation.framerate * timeLeft)
                 // Stay close to the natural pace; only nudge it to line the pose up.
-                character.animationSpeed = CGFloat(max(natural * 0.6, min(natural * 1.6 + 0.2, needed)))
+                lottie.animationSpeed = CGFloat(max(natural * 0.6, min(natural * 1.6 + 0.2, needed)))
             }
         } else {
-            velocity = Self.runSpeed
-            character.animationSpeed = 1
+            lottie.animationSpeed = 1
         }
-        x += velocity * CGFloat(dt)
+        move(dt)
 
         if remaining < 0.5 || velocity < 1 {
-            x = center
+            position = stopPoint
             velocity = 0
-            character.pause()
-            character.currentFrame = art.standFrame
+            lottie.pause()
+            lottie.currentFrame = art.standFrame
             showCard()
         }
     }
 
-    private func updateHover() {
+    /// Same run and brake for a still image, which hops along instead of moving its legs.
+    private func runInImage(_ dt: Double) {
+        let remaining = brake()
+        move(dt)
+        if remaining < 0.5 || velocity < 1 {
+            position = stopPoint
+            velocity = 0
+            hopPhase = 0
+            showCard()
+        }
+    }
+
+    private func cursorInStage() -> CGPoint {
         let mouse = NSEvent.mouseLocation
-        let cursor = CGPoint(x: mouse.x - screenFrame.minX, y: screenFrame.maxY - mouse.y)
-        let over = bubble.frame.insetBy(dx: -4, dy: -4).contains(cursor)
+        return CGPoint(x: mouse.x - screenFrame.minX, y: screenFrame.maxY - mouse.y)
+    }
+
+    private func updateHover() {
+        let over = bubble.frame.insetBy(dx: -4, dy: -4).contains(cursorInStage())
         guard over != interactive else { return }
         interactive = over
         setInteractive(over)
@@ -346,9 +481,30 @@ final class CharacterRunner: NSObject {
     }
 
     private func place() {
-        guard let character else { return }
-        let box = boxSide
-        // The drawing's feet (bottom, horizontal centre) land on (x, ground).
-        character.frame = CGRect(x: x - art.centerX * box, y: groundY - art.bottom * box, width: box, height: box)
+        switch actor {
+        case .lottie(let lottie, _):
+            let box = boxSide
+            // The drawing's feet (bottom, horizontal centre) land on the position.
+            lottie.frame = CGRect(x: position.x - art.centerX * box, y: position.y - art.bottom * box, width: box, height: box)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            lottie.layer?.sublayerTransform = CATransform3DMakeScale(facing, 1, 1)
+            CATransaction.commit()
+        case .image(let container, let layer, let drawn):
+            // Hop with the stride, lean into the run, squash a little on each landing.
+            let pace = min(1, Double(velocity / Self.runSpeed) * 1.5)
+            let bounce = abs(sin(hopPhase))
+            let lift = CGFloat(bounce * 18 * pace)
+            let tilt = CGFloat((0.07 + 0.05 * sin(hopPhase * 2)) * pace) * facing
+            let squash = CGFloat((1 - bounce) * 0.06 * pace)
+            container.frame = CGRect(x: position.x - drawn.width / 2, y: position.y - drawn.height - lift,
+                                     width: drawn.width, height: drawn.height)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.transform = CATransform3DScale(CATransform3DMakeRotation(tilt, 0, 0, 1), 1 + squash, 1 - squash, 1)
+            CATransaction.commit()
+        case .none:
+            break
+        }
     }
 }

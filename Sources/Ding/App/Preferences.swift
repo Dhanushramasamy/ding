@@ -6,7 +6,7 @@ final class Preferences: ObservableObject {
     private let defaults = UserDefaults.standard
     private static let characterKey = "character"
 
-    /// Name of the chosen file in Characters/ (without .json).
+    /// Name of the chosen character (a bundled animation or one of your images).
     @Published var characterName: String {
         didSet { defaults.set(characterName, forKey: Self.characterKey) }
     }

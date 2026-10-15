@@ -1,0 +1,115 @@
+<Window x:Class="Ding.AddImageWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Add your image" Width="640" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource PanelBackground}"
+        TextOptions.TextFormattingMode="Display" AllowDrop="True" Drop="OnDrop">
+
+    <Window.Resources>
+        <!-- Grey-and-white squares that show transparency, like image editors. -->
+        <DrawingBrush x:Key="Checkerboard" TileMode="Tile" Viewport="0,0,20,20" ViewportUnits="Absolute">
+            <DrawingBrush.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#F4F4F4" Geometry="M0,0 H20 V20 H0 Z" />
+                    <GeometryDrawing Brush="#E1E1E1" Geometry="M0,0 H10 V10 H0 Z M10,10 H20 V20 H10 Z" />
+                </DrawingGroup>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+
+        <Style x:Key="OptionCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource Surface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Stroke}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="24">
+        <TextBlock Text="Add your image" FontFamily="{StaticResource DisplayFont}" FontSize="22" FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextPrimary}" />
+        <TextBlock Text="Pick a photo or drawing, and it will run onto your screen with your reminders."
+                   Margin="0,4,0,18" FontFamily="{StaticResource UIFont}" FontSize="13" TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextSecondary}" />
+
+        <!-- Step 1: choose a picture. -->
+        <Border x:Name="DropZone" Height="240" CornerRadius="14" BorderThickness="1.5"
+                BorderBrush="{DynamicResource Stroke}" Background="{DynamicResource Surface}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="🖼" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,10" />
+                <Button Content="Choose an image…" Style="{StaticResource AccentButton}" HorizontalAlignment="Center"
+                        Padding="18,8" Click="OnChoose" />
+                <TextBlock Text="or drop one here · PNG, JPEG, WebP" Margin="0,10,0,0" HorizontalAlignment="Center"
+                           FontFamily="{StaticResource UIFont}" FontSize="12" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+        </Border>
+
+        <!-- Step 2: how to use it. -->
+        <StackPanel x:Name="ChoicePanel" Visibility="Collapsed">
+            <TextBlock Text="How should Ding use this image?" Margin="0,0,0,10" FontFamily="{StaticResource UIFont}"
+                       FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+
+                <Border x:Name="SubjectOption" Grid.Column="0" Style="{StaticResource OptionCard}" MouseLeftButtonUp="OnPickSubject">
+                    <StackPanel>
+                        <Grid Height="210" Background="{StaticResource Checkerboard}">
+                            <Image x:Name="SubjectPreview" Margin="12" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+                            <TextBlock x:Name="SubjectStatus" Text="Finding the subject…" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" FontFamily="{StaticResource UIFont}" FontSize="12" Foreground="#616161" />
+                        </Grid>
+                        <DockPanel Margin="2,10,2,2">
+                            <TextBlock x:Name="SubjectMark" Text="●" Width="20" FontSize="14" Foreground="{DynamicResource AccentText}" />
+                            <StackPanel>
+                                <TextBlock Text="Extract the subject" FontFamily="{StaticResource UIFont}" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimary}" />
+                                <TextBlock x:Name="SubjectDetail" Text="Cut out the person, pet or object from its background."
+                                           TextWrapping="Wrap" FontFamily="{StaticResource UIFont}" FontSize="11"
+                                           Foreground="{DynamicResource TextSecondary}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="FullOption" Grid.Column="2" Style="{StaticResource OptionCard}" MouseLeftButtonUp="OnPickFull">
+                    <StackPanel>
+                        <Grid Height="210" Background="{StaticResource Checkerboard}">
+                            <Image x:Name="FullPreview" Margin="12" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+                        </Grid>
+                        <DockPanel Margin="2,10,2,2">
+                            <TextBlock x:Name="FullMark" Text="○" Width="20" FontSize="14" Foreground="{DynamicResource TextSecondary}" />
+                            <StackPanel>
+                                <TextBlock Text="Use the full image" FontFamily="{StaticResource UIFont}" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimary}" />
+                                <TextBlock Text="Keep the whole picture, background and all." TextWrapping="Wrap"
+                                           FontFamily="{StaticResource UIFont}" FontSize="11" Foreground="{DynamicResource TextSecondary}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <DockPanel Margin="0,16,0,0">
+                <TextBlock Text="Name" Width="52" VerticalAlignment="Center" FontFamily="{StaticResource UIFont}" FontSize="13"
+                           Foreground="{DynamicResource TextSecondary}" />
+                <TextBox x:Name="NameField" Style="{StaticResource FieldBox}" />
+            </DockPanel>
+        </StackPanel>
+
+        <TextBlock x:Name="ErrorText" Visibility="Collapsed" Margin="0,10,0,0" TextWrapping="Wrap"
+                   FontFamily="{StaticResource UIFont}" FontSize="12" Foreground="#E0484F" />
+
+        <DockPanel Margin="0,18,0,0">
+            <Button x:Name="AnotherButton" Content="Choose another…" Style="{StaticResource SubtleButton}" Visibility="Collapsed" Click="OnChoose" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" Style="{StaticResource SubtleButton}" Margin="0,0,8,0" IsCancel="True" Click="OnCancel" />
+                <Button x:Name="AddButton" Content="Add Character" Style="{StaticResource AccentButton}" IsEnabled="False" IsDefault="True" Click="OnAdd" />
+            </StackPanel>
+        </DockPanel>
+    </StackPanel>
+</Window>

@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- The Windows 10 SDK target gives access to the system accent colour (UISettings). -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Lets the project compile on macOS/Linux too; it only runs on Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!-- WinForms is only used for the tray icon; DPI awareness is set in app.manifest for WPF. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+
+    <AssemblyName>Ding</AssemblyName>
+    <RootNamespace>Ding</RootNamespace>
+    <ApplicationIcon>Assets\Ding.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <Version>1.1.0</Version>
+    <Product>Ding</Product>
+    <Company>Dhanush Ramasamy</Company>
+    <Copyright>© 2026 Dhanush Ramasamy</Copyright>
+    <Description>Reminders that come running.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Skottie is Google's Lottie player, the same engine Chrome and Android use. -->
+    <PackageReference Include="SkiaSharp.Skottie" Version="2.88.9" />
+    <PackageReference Include="SkiaSharp.Views.WPF" Version="2.88.9" />
+    <!-- Runs the U²-Net model that lifts the subject out of a user's picture. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.19.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The same character animations as the Mac app. -->
+    <Content Include="..\Characters\*.json" LinkBase="Characters" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Resource Include="Assets\Ding.ico" />
+    <Resource Include="Assets\ding-icon-128.png" />
+    <Content Include="Assets\Models\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

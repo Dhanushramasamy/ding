@@ -17,6 +17,12 @@ struct DingApp: App {
             MenuBarLabel(store: appDelegate.reminders)
         }
         .menuBarExtraStyle(.window)
+
+        // Declared after the menu bar scene so it only opens when asked for.
+        Window("Add Your Image", id: AddImageView.windowID) {
+            AddImageView(prefs: appDelegate.prefs)
+        }
+        .windowResizability(.contentSize)
     }
 }
 

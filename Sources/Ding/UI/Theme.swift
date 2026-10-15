@@ -13,12 +13,15 @@ enum Brand {
 /// Real behind-window blur (frosted glass), the material macOS uses for popovers and HUDs.
 struct VisualEffect: NSViewRepresentable {
     var material: NSVisualEffectView.Material = .popover
+    /// Force light or dark glass; nil follows the system.
+    var appearance: NSAppearance.Name?
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = material
         view.blendingMode = .behindWindow
         view.state = .active
+        if let appearance { view.appearance = NSAppearance(named: appearance) }
         return view
     }
 

@@ -23,6 +23,7 @@ struct MenuView: View {
     let onHideEverything: () -> Void
     let onTest: () -> Void
 
+    @Environment(\.openWindow) private var openWindow
     @State private var message = ""
     @State private var minutes = 10
     @State private var alarmTime = Date().addingTimeInterval(3600)
@@ -111,7 +112,7 @@ struct MenuView: View {
 
             PanelGroup(title: "Delivered by") {
                 let characters = Character.all
-                HStack {
+                HStack(spacing: 8) {
                     Picker("", selection: Binding(
                         get: { prefs.character?.name ?? "" },
                         set: { prefs.characterName = $0 }
@@ -119,7 +120,16 @@ struct MenuView: View {
                         ForEach(characters) { Text($0.name).tag($0.name) }
                     }
                     .labelsHidden()
-                    .disabled(characters.isEmpty)
+                    if let chosen = prefs.character, chosen.isCustom {
+                        Button {
+                            CustomCharacters.remove(chosen)
+                            prefs.characterName = ""
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(PillButtonStyle())
+                        .help("Remove this image")
+                    }
                     Spacer()
                     Button {
                         closeAndRun(onTest)
@@ -128,6 +138,15 @@ struct MenuView: View {
                     }
                     .buttonStyle(PillButtonStyle())
                 }
+                Button {
+                    closeAndRun {
+                        openWindow(id: AddImageView.windowID)
+                        NSApp.activate()
+                    }
+                } label: {
+                    Label("Add your image…", systemImage: "photo.badge.plus")
+                }
+                .buttonStyle(PillButtonStyle())
             }
 
             HStack(spacing: 8) {

@@ -1,0 +1,121 @@
+<Window x:Class="Ding.TrayPanel"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Ding"
+        Width="392" SizeToContent="Height"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize"
+        TextOptions.TextFormattingMode="Display">
+
+    <!-- Margin leaves room for the shadow. -->
+    <Border Margin="12" Padding="16" CornerRadius="10"
+            Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource Stroke}" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Opacity="0.25" Color="Black" />
+        </Border.Effect>
+
+        <StackPanel>
+            <!-- Header: icon, name, description. -->
+            <DockPanel Margin="0,0,0,16">
+                <Image Source="Assets/ding-icon-128.png" Width="40" Height="40" Margin="0,0,12,0"
+                       RenderOptions.BitmapScalingMode="HighQuality" DockPanel.Dock="Left" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Ding" FontFamily="{StaticResource DisplayFont}" FontSize="18" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimary}" />
+                    <TextBlock Text="Reminders that come running." FontFamily="{StaticResource UIFont}" FontSize="12"
+                               Foreground="{DynamicResource TextSecondary}" />
+                </StackPanel>
+            </DockPanel>
+
+            <!-- New reminder -->
+            <TextBlock Text="New reminder" Style="{StaticResource SectionLabel}" />
+            <Border Style="{StaticResource Group}">
+                <StackPanel>
+                    <Grid>
+                        <TextBox x:Name="MessageField" Style="{StaticResource FieldBox}"
+                                 TextChanged="OnMessageChanged" KeyDown="OnMessageKeyDown" />
+                        <TextBlock x:Name="MessagePlaceholder" Text="What should I remind you about?" IsHitTestVisible="False"
+                                   Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="{StaticResource UIFont}" FontSize="14"
+                                   Foreground="{DynamicResource TextSecondary}" />
+                    </Grid>
+
+                    <UniformGrid x:Name="Presets" Rows="1" Margin="0,10,0,0" />
+
+                    <Border Height="1" Background="{DynamicResource Stroke}" Margin="0,12" />
+
+                    <DockPanel>
+                        <TextBlock Text="In" Width="24" VerticalAlignment="Center" FontFamily="{StaticResource UIFont}" FontSize="13"
+                                   Foreground="{DynamicResource TextSecondary}" />
+                        <Button Content="Start" Style="{StaticResource AccentButton}" MinWidth="76" DockPanel.Dock="Right" Click="OnStart" />
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="−" Style="{StaticResource SubtleButton}" Width="30" Padding="0,4" Click="OnMinus" />
+                            <TextBlock x:Name="MinutesText" Text="10 min" Width="64" TextAlignment="Center" VerticalAlignment="Center"
+                                       FontFamily="{StaticResource UIFont}" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimary}" />
+                            <Button Content="+" Style="{StaticResource SubtleButton}" Width="30" Padding="0,4" Click="OnPlus" />
+                        </StackPanel>
+                    </DockPanel>
+
+                    <DockPanel Margin="0,10,0,0">
+                        <TextBlock Text="At" Width="24" VerticalAlignment="Center" FontFamily="{StaticResource UIFont}" FontSize="13"
+                                   Foreground="{DynamicResource TextSecondary}" />
+                        <Button Content="Set alarm" Style="{StaticResource SubtleButton}" MinWidth="76" DockPanel.Dock="Right" Click="OnSetAlarm" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="AlarmField" Style="{StaticResource FieldBox}" Width="124" FontSize="13" />
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBlock x:Name="AlarmHint" Text="Use a time like 17:30 or 5:30 PM" Visibility="Collapsed" Margin="24,6,0,0"
+                               FontFamily="{StaticResource UIFont}" FontSize="11" Foreground="#E0484F" />
+                </StackPanel>
+            </Border>
+
+            <!-- Upcoming -->
+            <StackPanel x:Name="UpcomingSection" Margin="0,16,0,0" Visibility="Collapsed">
+                <TextBlock Text="Upcoming" Style="{StaticResource SectionLabel}" />
+                <Border Style="{StaticResource Group}" Padding="12,8">
+                    <ItemsControl x:Name="UpcomingList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,4">
+                                    <TextBlock Text="{Binding Remaining}" Width="72" VerticalAlignment="Center"
+                                               FontFamily="{StaticResource DisplayFont}" FontSize="15" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AccentText}" />
+                                    <Button Content="✕" Style="{StaticResource IconButton}" DockPanel.Dock="Right"
+                                            Tag="{Binding}" Click="OnCancel" ToolTip="Cancel" />
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
+                                        <TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis"
+                                                   FontFamily="{StaticResource UIFont}" FontSize="13" Foreground="{DynamicResource TextPrimary}" />
+                                        <TextBlock Text="{Binding Title}" FontFamily="{StaticResource UIFont}" FontSize="11"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+            </StackPanel>
+
+            <!-- Character -->
+            <TextBlock Text="Delivered by" Style="{StaticResource SectionLabel}" Margin="2,16,0,6" />
+            <Border Style="{StaticResource Group}">
+                <StackPanel>
+                    <WrapPanel x:Name="CharacterChips" />
+                    <DockPanel Margin="0,8,0,0">
+                        <Button Content="▶  Preview" Style="{StaticResource SubtleButton}" DockPanel.Dock="Right" Click="OnPreview" />
+                        <Button x:Name="RemoveButton" Content="Remove" Style="{StaticResource SubtleButton}" DockPanel.Dock="Right"
+                                Margin="0,0,6,0" Visibility="Collapsed" Click="OnRemoveImage" ToolTip="Remove this image" />
+                        <Button Content="+  Add your image…" Style="{StaticResource SubtleButton}" HorizontalAlignment="Left" Click="OnAddImage" />
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Footer -->
+            <DockPanel Margin="0,16,0,0">
+                <Button Content="Quit" Style="{StaticResource SubtleButton}" DockPanel.Dock="Right" Click="OnQuit" />
+                <Button Content="Hide Everything" Style="{StaticResource SubtleButton}" Click="OnHideEverything" />
+                <TextBlock Text="Ctrl+Alt+H" Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="{StaticResource UIFont}"
+                           FontSize="11" Foreground="{DynamicResource TextSecondary}" />
+            </DockPanel>
+        </StackPanel>
+    </Border>
+</Window>

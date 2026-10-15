@@ -4,3 +4,7 @@ dist/
 release/
 *.dmg
 *.sha256
+windows/bin/
+windows/obj/
+windows/publish/
+windows/installer/Output/
