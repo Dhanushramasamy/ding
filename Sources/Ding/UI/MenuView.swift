@@ -7,11 +7,11 @@ struct MenuBarLabel: View {
     var body: some View {
         if let next = store.next {
             HStack(spacing: 3) {
-                Image(systemName: "figure.run")
+                Image(systemName: "stopwatch")
                 Text(store.remaining(next)).monospacedDigit()
             }
         } else {
-            Image(systemName: "figure.run")
+            Image(systemName: "stopwatch")
         }
     }
 }

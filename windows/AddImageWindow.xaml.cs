@@ -30,6 +30,8 @@ namespace Ding
         {
             InitializeComponent();
             SourceInitialized += (_, _) => Native.RoundCorners(new WindowInteropHelper(this).Handle);
+            // Ding lives in the tray, so make sure this window opens in front of other apps.
+            Loaded += (_, _) => { Activate(); Focus(); };
             Closed += (_, _) =>
             {
                 _original?.Dispose();

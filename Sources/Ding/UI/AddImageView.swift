@@ -76,6 +76,7 @@ struct AddImageView: View {
         }
         .padding(24)
         .frame(width: 580)
+        .background(BringToFront())
     }
 
     // MARK: Pieces
@@ -227,4 +228,23 @@ private struct Checkerboard: View {
             context.fill(squares, with: .color(Color(white: 0.88)))
         }
     }
+}
+
+/// Brings the window it sits in to the front as soon as it appears. Ding lives in the
+/// menu bar, so without this a new window can open behind whatever app is in use.
+private struct BringToFront: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.level = .floating
+            window.center()
+            NSApp.activate()
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
 }
